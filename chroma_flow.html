@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0f">
+<title>Chroma Flow — Fluid Sim & Screen Tester</title>
+<style>
+  :root{
+    --panel-bg: rgba(9,9,13,0.82);
+    --panel-border: rgba(255,255,255,0.10);
+    --accent: #ff2fb0;
+    --accent2: #2fd8ff;
+    --text: #eaeaf0;
+    --muted: #9a9aa8;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;overflow:hidden;background:#000;height:100%;width:100%;
+    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;color:var(--text);
+    -webkit-tap-highlight-color:transparent;}
+  #stage{position:fixed;inset:0;background:#000;cursor:crosshair;touch-action:none;}
+  canvas{display:block;position:absolute;top:0;left:0;}
+
+  :focus-visible{outline:2px solid var(--accent2);outline-offset:2px;}
+
+  @keyframes riseIn{ from{opacity:0;transform:translateY(14px);} to{opacity:1;transform:translateY(0);} }
+  @keyframes titleGlow{ 0%,100%{filter:drop-shadow(0 0 18px rgba(255,47,176,0.25));} 50%{filter:drop-shadow(0 0 28px rgba(47,216,255,0.35));} }
+  @keyframes softPulse{ 0%,100%{box-shadow:0 8px 30px rgba(255,47,176,0.35);} 50%{box-shadow:0 8px 42px rgba(47,216,255,0.45);} }
+
+  #startOverlay{
+    position:fixed;inset:0;z-index:100;
+    background:radial-gradient(circle at 50% 40%, #101018 0%, #000 70%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;gap:18px;transition:opacity .4s ease;
+  }
+  #startOverlay h1{
+    font-size:2.4em;margin:0;
+    background:linear-gradient(90deg,#ff2fb0,#2fd8ff);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    letter-spacing:1px;
+    animation:riseIn .7s ease backwards, titleGlow 4s ease-in-out 0.7s infinite;
+  }
+  #startOverlay p{color:var(--muted);max-width:480px;line-height:1.5;font-size:0.95em;margin:0;
+    animation:riseIn .7s ease .12s backwards;}
+  #startBtn{
+    margin-top:10px;padding:14px 34px;border-radius:40px;border:none;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    color:#000;font-weight:700;font-size:1em;cursor:pointer;
+    box-shadow:0 8px 30px rgba(255,47,176,0.35);
+    transition:transform .15s ease, box-shadow .3s ease;
+    animation:riseIn .7s ease .22s backwards, softPulse 3s ease-in-out 1s infinite;
+  }
+  #startBtn:hover{transform:scale(1.06);}
+  #startBtn:active{transform:scale(0.97);}
+  #startOverlay .hint{font-size:0.8em;color:#66666f;margin-top:6px;animation:riseIn .7s ease .3s backwards;}
+  #glWarning{color:#ff6666;font-size:0.85em;max-width:420px;display:none;}
+
+  #firstHint{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:25;
+    color:var(--muted);font-size:13px;letter-spacing:.3px;text-align:center;
+    pointer-events:none;opacity:0;transition:opacity .6s ease;white-space:nowrap;
+  }
+  #firstHint.show{opacity:1;}
+  #firstHint kbd{margin:0 2px;}
+
+  #snapFlash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:90;}
+  #snapFlash.go{opacity:0.85;transition:opacity .55s ease;}
+
+  #ui{
+    position:fixed;top:16px;left:16px;z-index:20;
+    background:var(--panel-bg);backdrop-filter:blur(18px);
+    border:1px solid var(--panel-border);border-radius:16px;
+    padding:16px 18px;width:250px;font-size:13px;
+    box-shadow:0 10px 40px rgba(0,0,0,0.6);
+    transition:opacity .3s ease, transform .3s ease;
+    animation:riseIn .5s ease .1s backwards;
+  }
+  #ui.hidden{opacity:0;transform:translateX(-12px) scale(.98);pointer-events:none;}
+  #ui h2{margin:0 0 10px;font-size:14px;letter-spacing:.5px;
+    background:linear-gradient(90deg,#ff2fb0,#2fd8ff);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    display:flex;align-items:center;justify-content:space-between;}
+  #ui h2 .modeGlow{width:7px;height:7px;border-radius:50%;background:var(--accent2);
+    box-shadow:0 0 8px 2px var(--accent2);-webkit-text-fill-color:initial;
+    animation:softDot 2s ease-in-out infinite;}
+  @keyframes softDot{ 0%,100%{opacity:.4;} 50%{opacity:1;} }
+  .row{margin-bottom:10px;}
+  .row label{display:flex;justify-content:space-between;color:var(--muted);margin-bottom:4px;font-size:11.5px;}
+  .row label.checkrow{align-items:center;margin-bottom:0;cursor:pointer;}
+  .row label.checkrow input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px;cursor:pointer;flex:0 0 auto;}
+  .row-control{display:flex;align-items:center;gap:8px;}
+  .row-control input[type=range]{flex:1;accent-color:var(--accent);cursor:pointer;}
+  .numbox{
+    width:52px;flex:0 0 auto;background:#1a1a22;color:var(--text);
+    border:1px solid var(--panel-border);border-radius:6px;
+    padding:3px 4px;font-size:11.5px;text-align:right;
+    -moz-appearance:textfield;transition:border-color .15s ease, background .15s ease;
+  }
+  .numbox::-webkit-outer-spin-button, .numbox::-webkit-inner-spin-button{
+    -webkit-appearance:none;margin:0;
+  }
+  .numbox:hover{background:#20202a;}
+  .numbox:focus{outline:none;border-color:var(--accent);background:#20202a;}
+  select{width:100%;background:#1a1a22;color:var(--text);border:1px solid var(--panel-border);
+    border-radius:8px;padding:6px 8px;font-size:12.5px;cursor:pointer;transition:border-color .15s ease;}
+  select:hover{border-color:#555;}
+  .modebtns{display:flex;gap:6px;margin-bottom:10px;}
+  .modebtns button, .actionbtns button{
+    flex:1;padding:8px 4px;border-radius:8px;border:1px solid var(--panel-border);
+    background:#1a1a22;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s ease;}
+  .modebtns button.active{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#000;font-weight:700;border:none;
+    box-shadow:0 4px 16px rgba(255,47,176,0.3);}
+  .actionbtns{display:flex;gap:6px;margin-top:6px;}
+  .actionbtns button:hover, .modebtns button:hover{color:#fff;border-color:#555;transform:translateY(-1px);}
+  .actionbtns button:active, .modebtns button:active{transform:translateY(0) scale(.96);}
+  .actionbtns button.secondary{background:#181820;}
+  #ui .hintline{margin-top:12px;font-size:10.6px;color:#5c5c68;line-height:1.6;border-top:1px solid var(--panel-border);padding-top:10px;}
+  kbd{background:#26262f;border-radius:4px;padding:1px 5px;font-size:10px;color:#ccc;}
+
+  #testOverlay{position:fixed;inset:0;z-index:50;display:none;}
+  #testLabel{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+    color:rgba(255,255,255,0.6);font-size:12px;letter-spacing:1px;z-index:51;display:none;mix-blend-mode:difference;}
+
+  #toggleUiTab{position:fixed;top:16px;left:16px;z-index:19;width:34px;height:34px;
+    border-radius:10px;background:var(--panel-bg);border:1px solid var(--panel-border);
+    display:none;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);
+    transition:color .15s ease, transform .15s ease;}
+  #toggleUiTab.show{display:flex;animation:riseIn .3s ease backwards;}
+  #toggleUiTab:hover{color:#fff;transform:scale(1.08);}
+  #toggleUiTab:active{transform:scale(.94);}
+
+  #debugHud{
+    position:fixed;bottom:16px;right:16px;z-index:30;
+    background:rgba(6,6,10,0.85);border:1px solid rgba(255,255,255,0.12);
+    border-radius:10px;padding:10px 12px;
+    font-family:'Consolas','SF Mono',monospace;font-size:11px;line-height:1.55;
+    color:#8fffb0;width:290px;display:none;white-space:pre-wrap;
+    box-shadow:0 10px 30px rgba(0,0,0,0.6);
+  }
+  #debugHud.show{display:block;}
+  #debugHud .hud-title{color:#2fd8ff;font-weight:bold;margin-bottom:4px;}
+  #debugHud .hud-log{margin-top:6px;color:#ffcf6a;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px;font-size:10px;}
+  #debugHud .hud-warn{color:#ff6666;}
+</style>
+</head>
+<body>
+
+<div id="startOverlay">
+  <h1>Chroma Flow</h1>
+  <p>A real GPU fluid simulation — velocity fields, swirling vorticity, dye that actually flows and mixes like smoke or ink in water. Drag to stir it, or let it run on its own with mirrored, mandala-style patterns.</p>
+  <button id="startBtn">Enter Fullscreen &amp; Begin</button>
+  <div class="hint">Press Esc anytime to exit fullscreen · press D once inside for the debug panel</div>
+  <div style="margin-top: 16px; font-size: 0.8em; color: rgba(255,255,255,0.3); letter-spacing: 0.3px; animation: riseIn .7s ease .4s backwards;">made with ❤️ by Rane Kun</div>
+  <div id="glWarning">Your browser doesn't support WebGL2 with float render targets, so this can't run here. Try a recent version of Chrome, Edge, or Firefox.</div>
+</div>
+
+<div id="stage">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="testOverlay"></div>
+<div id="testLabel"></div>
+<div id="toggleUiTab" title="Show panel (H)" aria-label="Show control panel">⋮</div>
+<div id="debugHud"></div>
+<div id="snapFlash"></div>
+<div id="firstHint">Click &amp; drag to paint the flow &nbsp;·&nbsp; <kbd>Space</kbd> for Auto mode</div>
+
+<div id="ui">
+  <h2>CHROMA FLOW <span class="modeGlow" id="modeGlow" title="Live"></span></h2>
+  <div class="modebtns">
+    <button id="manualBtn" class="active" aria-pressed="true">Manual</button>
+    <button id="autoBtn" aria-pressed="false">Auto</button>
+  </div>
+
+  <div class="row">
+    <label><span>Brush Size</span></label>
+    <div class="row-control">
+      <input type="range" id="brushSize" min="1" max="15" value="3">
+      <input type="number" id="brushSizeNum" class="numbox" min="1" max="15" step="1" value="3">
+    </div>
+  </div>
+  <div class="row">
+    <label><span>Trail Persistence</span></label>
+    <div class="row-control">
+      <input type="range" id="trailFade" min="1" max="100" value="65">
+      <input type="number" id="trailFadeNum" class="numbox" min="1" max="100" step="1" value="65">
+    </div>
+  </div>
+  <div class="row">
+    <label><span>Swirl Strength</span></label>
+    <div class="row-control">
+      <input type="range" id="curlAmt" min="0" max="60" value="25">
+      <input type="number" id="curlAmtNum" class="numbox" min="0" max="60" step="1" value="25">
+    </div>
+  </div>
+  <div class="row">
+    <label><span>Auto Speed</span></label>
+    <div class="row-control">
+      <input type="range" id="autoSpeed" min="2" max="30" value="5">
+      <input type="number" id="autoSpeedNum" class="numbox" min="0.2" max="3.0" step="0.1" value="0.5">
+    </div>
+  </div>
+  <div class="row">
+    <label><span>Palette</span></label>
+    <select id="palette">
+      <option value="neon" selected>Neon</option>
+      <option value="pastel">Pastel</option>
+      <option value="fire">Fire</option>
+      <option value="ocean">Ocean</option>
+      <option value="thermal">Thermal</option>
+      <option value="aurora">Aurora</option>
+      <option value="crimson">Crimson</option>
+    </select>
+  </div>
+  <div class="row">
+    <label><span>Background</span></label>
+    <select id="background">
+      <option value="black" selected>Black</option>
+      <option value="white">White</option>
+      <option value="sage">Sage</option>
+      <option value="umber">Umber</option>
+      <option value="violet">Violet</option>
+      <option value="maroon">Maroon</option>
+    </select>
+  </div>
+  <div class="row">
+    <label><span>Symmetry</span></label>
+    <select id="symmetry">
+      <option value="none">Off</option>
+      <option value="mirror2">Mirror ×2</option>
+      <option value="mirror4" selected>Mirror ×4</option>
+      <option value="kaleido3">Kaleidoscope ×3</option>
+      <option value="kaleido6">Kaleidoscope ×6</option>
+      <option value="kaleido8">Kaleidoscope ×8</option>
+      <option value="kaleido12">Kaleidoscope ×12</option>
+      <option value="mandala6">Mandala ×6 (mirror+spin)</option>
+      <option value="mandala10">Mandala ×10 (mirror+spin)</option>
+    </select>
+  </div>
+
+  <div class="actionbtns">
+    <button id="clearBtn">Clear (C)</button>
+    <button id="hideBtn">Hide (H)</button>
+  </div>
+  <div class="actionbtns">
+    <button id="randomBtn" class="secondary" title="Randomize palette &amp; symmetry (R)">🎲 Surprise</button>
+    <button id="snapBtn" class="secondary" title="Save a PNG snapshot (S)">📸 Snapshot</button>
+  </div>
+
+  <div class="hintline">
+    <b>Screen test:</b> <kbd>1</kbd>white <kbd>2</kbd>black <kbd>3-5</kbd>RGB <kbd>6</kbd>gray <kbd>7</kbd>stripes <kbd>8</kbd>gradient <kbd>9</kbd>spectrum <kbd>0</kbd>back<br>
+    <kbd>Space</kbd> mode · <kbd>R</kbd> surprise · <kbd>S</kbd> snapshot · <kbd>D</kbd> debug · <kbd>F</kbd> fullscreen · <kbd>Esc</kbd> quit
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   CHROMA FLOW — a real-time GPU fluid simulation
+   =====================================================================
+   Core technique: Jos Stam's "stable fluids" (GDC 2003), run on the GPU
+   via WebGL2 fragment shaders — the same family of algorithm used by
+   most mobile "fluid paint" apps.
+
+   Two fields live on a grid:
+     - velocity: (vx, vy) at every cell — how the fluid is moving there.
+     - dye: the RGB colour "ink" carried along by that velocity. This is
+       what's actually visible on screen.
+
+   Every frame (see step()):
+     1. curl                    — measure local rotation of velocity.
+     2. vorticity confinement   — amplify existing spin (this is what
+        produces curling tendrils instead of flat, dull motion).
+     3. divergence               — measure how "incompressible" the
+        field currently isn't.
+     4. pressure solve (Jacobi)  — relax a pressure field to cancel
+        that divergence.
+     5. gradient subtraction     — subtract the pressure gradient from
+        velocity, leaving an (approximately) divergence-free field.
+     6. advect velocity by itself, then advect dye by velocity — this
+        is what actually moves colour around.
+     7. splats — user input, or the auto-pilot's patterns, inject new
+        velocity and/or dye.
+
+   ON TOP OF THAT PHYSICS, this version adds two purely artistic layers
+   that don't exist in the base algorithm:
+     - SYMMETRY: every splat can be mirrored / rotated around the
+       screen centre before being applied, which is what produces the
+       mandala / kaleidoscope look.
+     - SHAPE GENERATION: instead of only firing single blob "bursts",
+       auto mode periodically draws a whole parametric shape (line,
+       circle, arc, spiral, radial burst) point-by-point over a few
+       frames, each point mirrored by the active symmetry — this is
+       what gives auto mode actual *composition* instead of aimless
+       wandering.
+   ===================================================================== */
+
+(function(){
+  // ------------------------------------------------------------------
+  // DOM references
+  // ------------------------------------------------------------------
+  const canvas = document.getElementById('canvas');
+  const startOverlay = document.getElementById('startOverlay');
+  const startBtn = document.getElementById('startBtn');
+  const glWarning = document.getElementById('glWarning');
+  const ui = document.getElementById('ui');
+  const toggleUiTab = document.getElementById('toggleUiTab');
+  const testOverlay = document.getElementById('testOverlay');
+  const testLabel = document.getElementById('testLabel');
+  const debugHud = document.getElementById('debugHud');
+  const snapFlash = document.getElementById('snapFlash');
+  const firstHint = document.getElementById('firstHint');
+
+  const manualBtn = document.getElementById('manualBtn');
+  const autoBtn = document.getElementById('autoBtn');
+  const brushSize = document.getElementById('brushSize');
+  const brushSizeNum = document.getElementById('brushSizeNum');
+  const trailFade = document.getElementById('trailFade');
+  const trailFadeNum = document.getElementById('trailFadeNum');
+  const curlAmt = document.getElementById('curlAmt');
+  const curlAmtNum = document.getElementById('curlAmtNum');
+  const autoSpeed = document.getElementById('autoSpeed');
+  const autoSpeedNum = document.getElementById('autoSpeedNum');
+  const paletteSel = document.getElementById('palette');
+  const backgroundSel = document.getElementById('background');
+  const symmetrySel = document.getElementById('symmetry');
+  const clearBtn = document.getElementById('clearBtn');
+  const hideBtn = document.getElementById('hideBtn');
+  const randomBtn = document.getElementById('randomBtn');
+  const snapBtn = document.getElementById('snapBtn');
+
+  // ------------------------------------------------------------------
+  // DEBUG LOGGING — visible in the on-screen HUD (press D) and console.
+  // ------------------------------------------------------------------
+  const debugLog = [];
+  function logDebug(msg, isWarning){
+    const stamped = `[${new Date().toISOString().substr(11,8)}] ${msg}`;
+    debugLog.push({text: stamped, warn: !!isWarning});
+    if(debugLog.length > 8) debugLog.shift();
+    if(isWarning) console.warn('[ChromaFlow]', msg); else console.log('[ChromaFlow]', msg);
+  }
+  const stats = { splatCount: 0, frame: 0, shapeCount: 0 };
+
+  // ------------------------------------------------------------------
+  // WebGL2 context + capability detection
+  // ------------------------------------------------------------------
+  const gl = canvas.getContext('webgl2', {
+    alpha:false, depth:false, stencil:false, antialias:true, preserveDrawingBuffer:false
+  });
+  if(!gl){
+    logDebug('WebGL2 context creation failed — browser/GPU unsupported.', true);
+    glWarning.style.display='block';
+    startBtn.disabled = true; startBtn.style.opacity = 0.4;
+    return;
+  }
+
+  let floatExt = gl.getExtension('EXT_color_buffer_float');
+  let formatName = 'RGBA16F / HALF_FLOAT';
+  let internalFormatRGBA = gl.RGBA16F, texType = gl.HALF_FLOAT;
+  if(!floatExt){
+    floatExt = gl.getExtension('EXT_color_buffer_half_float');
+    if(!floatExt){
+      logDebug('No float render-target extension available — falling back to 8-bit RGBA.', true);
+      internalFormatRGBA = gl.RGBA8; texType = gl.UNSIGNED_BYTE;
+      formatName = 'RGBA8 / UNSIGNED_BYTE (fallback)';
+    }
+  }
+  const filterMode = gl.LINEAR;
+
+  let rendererInfo = 'unknown (browser hides this)';
+  const dbgExt = gl.getExtension('WEBGL_debug_renderer_info');
+  if(dbgExt){ rendererInfo = gl.getParameter(dbgExt.UNMASKED_RENDERER_WEBGL); }
+  logDebug(`GL renderer: ${rendererInfo}`);
+  logDebug(`Render target format: ${formatName}`);
+
+  // ------------------------------------------------------------------
+  // Tunable simulation parameters.
+  // ------------------------------------------------------------------
+  let config = {
+    SIM_RESOLUTION: 320,
+    DYE_RESOLUTION: 1800,
+    DENSITY_DISSIPATION: 1.1,
+    VELOCITY_DISSIPATION: 0.18,   // slightly lower than before -> flow keeps momentum longer, feels more responsive/alive
+    PRESSURE: 0.8,
+    PRESSURE_ITERATIONS: 28,
+    CURL: 25,
+    SPLAT_RADIUS: 0.0018,
+    SPLAT_FORCE: 7200,            // punchier than before for snappier manual dragging
+    // Bloom is no longer a user-facing dial — it's a fixed, tuned-in part of
+    // the look (this is what gives the reference screenshots their glow),
+    // set generously since visual quality is prioritized over performance.
+    BLOOM_INTENSITY: 0.95,
+    BLOOM_THRESHOLD: 0.22,
+    BLOOM_ITERATIONS: 8,
+    BLOOM_RESOLUTION: 384,
+    // Sunrays: a radial light-shaft pass (ported from PavelDoGreat's
+    // WebGL-Fluid-Simulation) that gives the bright cores in the flow
+    // the streaking, glowing-ember look seen throughout the reference
+    // screenshots — also not user-facing, same reasoning as bloom above.
+    SUNRAYS_RESOLUTION: 196,
+    SUNRAYS_WEIGHT: 0.6,
+    BACK_COLOR: [0,0,0]
+  };
+
+  // Background presets, colour-matched to the reference screenshots
+  // (white/cream, sage-green, umber-brown, deep violet, maroon).
+  const BACKGROUNDS = {
+    black:  [0.0,   0.0,   0.0  ],
+    white:  [0.95,  0.94,  0.90 ],
+    sage:   [0.34,  0.40,  0.32 ],
+    umber:  [0.28,  0.20,  0.15 ],
+    violet: [0.13,  0.09,  0.19 ],
+    maroon: [0.26,  0.05,  0.08 ]
+  };
+
+  // Quality tiers, raised across the board vs. the original build — this
+  // sim prioritizes visual fidelity over raw frame rate. The adaptive
+  // downgrade further down still steps down automatically if a device's
+  // frame rate genuinely can't keep up, so lower-end hardware is still
+  // protected from becoming unusable.
+  const qualityPresets = [
+    { SIM: 144, DYE: 1024, BLOOM: 240, label: 'Low' },
+    { SIM: 224, DYE: 1400, BLOOM: 300, label: 'Medium' },
+    { SIM: 320, DYE: 1800, BLOOM: 384, label: 'High' }
+  ];
+  let qualityLevel = 2;
+
+  // ------------------------------------------------------------------
+  // Shader compilation helpers
+  // ------------------------------------------------------------------
+  function compileShader(type, source){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, source);
+    gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      const info = gl.getShaderInfoLog(s);
+      logDebug('Shader compile error: ' + info, true);
+      console.error(info);
+    }
+    return s;
+  }
+  function createProgram(vsSource, fsSource){
+    const vs = compileShader(gl.VERTEX_SHADER, vsSource);
+    const fs = compileShader(gl.FRAGMENT_SHADER, fsSource);
+    const p = gl.createProgram();
+    gl.attachShader(p, vs); gl.attachShader(p, fs);
+    gl.linkProgram(p);
+    if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+      const info = gl.getProgramInfoLog(p);
+      logDebug('Program link error: ' + info, true);
+      console.error(info);
+    }
+    return p;
+  }
+  function getUniforms(program){
+    const uniforms = {};
+    const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+    for(let i=0;i<count;i++){
+      const info = gl.getActiveUniform(program, i);
+      uniforms[info.name] = gl.getUniformLocation(program, info.name);
+    }
+    return uniforms;
+  }
+  class GLProgram{
+    constructor(vs, fs){ this.program = createProgram(vs, fs); this.uniforms = getUniforms(this.program); }
+    bind(){ gl.useProgram(this.program); }
+  }
+
+  const baseVertex = `#version 300 es
+  precision highp float;
+  in vec2 aPosition;
+  out vec2 vUv; out vec2 vL; out vec2 vR; out vec2 vT; out vec2 vB;
+  uniform vec2 texelSize;
+  void main(){
+    vUv = aPosition*0.5+0.5;
+    vL = vUv - vec2(texelSize.x, 0.0);
+    vR = vUv + vec2(texelSize.x, 0.0);
+    vT = vUv + vec2(0.0, texelSize.y);
+    vB = vUv - vec2(0.0, texelSize.y);
+    gl_Position = vec4(aPosition,0.0,1.0);
+  }`;
+
+  const clearShader = `#version 300 es
+  precision mediump float; precision mediump sampler2D;
+  in vec2 vUv; uniform sampler2D uTexture; uniform float value; out vec4 fragColor;
+  void main(){ fragColor = value * texture(uTexture, vUv); }`;
+
+  const splatShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  in vec2 vUv; uniform sampler2D uTarget; uniform float aspectRatio;
+  uniform vec3 color; uniform vec2 point; uniform float radius; out vec4 fragColor;
+  void main(){
+    vec2 p = vUv - point.xy; p.x *= aspectRatio;
+    vec3 splat = exp(-dot(p,p)/radius) * color;
+    vec3 base = texture(uTarget, vUv).xyz;
+    fragColor = vec4(base + splat, 1.0);
+  }`;
+
+  const advectionShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  in vec2 vUv; uniform sampler2D uVelocity; uniform sampler2D uSource;
+  uniform vec2 texelSize; uniform float dt; uniform float dissipation; out vec4 fragColor;
+  void main(){
+    vec2 coord = vUv - dt * texture(uVelocity, vUv).xy * texelSize;
+    vec4 result = texture(uSource, coord);
+    float decay = 1.0 + dissipation * dt;
+    fragColor = result / decay;
+  }`;
+
+  const divergenceShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+  uniform sampler2D uVelocity; out vec4 fragColor;
+  void main(){
+    float L = texture(uVelocity, vL).x; float R = texture(uVelocity, vR).x;
+    float T = texture(uVelocity, vT).y; float B = texture(uVelocity, vB).y;
+    vec2 C = texture(uVelocity, vUv).xy;
+    if(vL.x < 0.0) L = -C.x; if(vR.x > 1.0) R = -C.x;
+    if(vT.y > 1.0) T = -C.y; if(vB.y < 0.0) B = -C.y;
+    float div = 0.5*(R-L+T-B);
+    fragColor = vec4(div,0.0,0.0,1.0);
+  }`;
+
+  const curlShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+  uniform sampler2D uVelocity; out vec4 fragColor;
+  void main(){
+    float L = texture(uVelocity, vL).y; float R = texture(uVelocity, vR).y;
+    float T = texture(uVelocity, vT).x; float B = texture(uVelocity, vB).x;
+    float vort = R - L - T + B;
+    fragColor = vec4(0.5*vort,0.0,0.0,1.0);
+  }`;
+
+  const vorticityShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+  uniform sampler2D uVelocity; uniform sampler2D uCurl; uniform float curlStrength; uniform float dt;
+  out vec4 fragColor;
+  void main(){
+    float L = texture(uCurl, vL).x; float R = texture(uCurl, vR).x;
+    float T = texture(uCurl, vT).x; float B = texture(uCurl, vB).x; float C = texture(uCurl, vUv).x;
+    vec2 force = 0.5*vec2(abs(T)-abs(B), abs(R)-abs(L));
+    force /= length(force) + 0.0001;
+    force *= curlStrength * C;
+    force.y *= -1.0;
+    vec2 vel = texture(uVelocity, vUv).xy;
+    vel += force*dt;
+    vel = clamp(vel, -1000.0, 1000.0);
+    fragColor = vec4(vel,0.0,1.0);
+  }`;
+
+  const pressureShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+  uniform sampler2D uPressure; uniform sampler2D uDivergence; out vec4 fragColor;
+  void main(){
+    float L = texture(uPressure, vL).x; float R = texture(uPressure, vR).x;
+    float T = texture(uPressure, vT).x; float B = texture(uPressure, vB).x;
+    float divergence = texture(uDivergence, vUv).x;
+    float pressure = (L+R+B+T-divergence)*0.25;
+    fragColor = vec4(pressure,0.0,0.0,1.0);
+  }`;
+
+  const gradientSubtractShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  in vec2 vUv; in vec2 vL; in vec2 vR; in vec2 vT; in vec2 vB;
+  uniform sampler2D uPressure; uniform sampler2D uVelocity; out vec4 fragColor;
+  void main(){
+    float L = texture(uPressure, vL).x; float R = texture(uPressure, vR).x;
+    float T = texture(uPressure, vT).x; float B = texture(uPressure, vB).x;
+    vec2 velocity = texture(uVelocity, vUv).xy;
+    velocity -= vec2(R-L, T-B);
+    fragColor = vec4(velocity,0.0,1.0);
+  }`;
+
+  const brightPassShader = `#version 300 es
+  precision mediump float; precision mediump sampler2D;
+  in vec2 vUv; uniform sampler2D uTexture; uniform float threshold; out vec4 fragColor;
+  void main(){
+    vec3 c = texture(uTexture, vUv).rgb;
+    float br = max(c.r, max(c.g,c.b));
+    float soft = clamp(br - threshold, 0.0, 1.0);
+    fragColor = vec4(c*soft,1.0);
+  }`;
+  const blurShader = `#version 300 es
+  precision mediump float; precision mediump sampler2D;
+  in vec2 vUv; uniform sampler2D uTexture; uniform vec2 direction; out vec4 fragColor;
+  void main(){
+    vec2 off1 = direction*1.3846153846; vec2 off2 = direction*3.2307692308;
+    vec3 c = texture(uTexture, vUv).rgb*0.2270270270;
+    c += texture(uTexture, vUv+off1).rgb*0.3162162162;
+    c += texture(uTexture, vUv-off1).rgb*0.3162162162;
+    c += texture(uTexture, vUv+off2).rgb*0.0702702703;
+    c += texture(uTexture, vUv-off2).rgb*0.0702702703;
+    fragColor = vec4(c,1.0);
+  }`;
+
+  // FINAL DISPLAY: dye + bloom, then ACES filmic tonemap, composited over a
+  // configurable background colour (instead of always assuming black).
+  const sunraysMaskShader = `#version 300 es
+  precision mediump float; precision mediump sampler2D;
+  in vec2 vUv; uniform sampler2D uTexture; out vec4 fragColor;
+  void main(){
+    vec4 c = texture(uTexture, vUv);
+    float br = max(c.r, max(c.g, c.b));
+    float a = smoothstep(0.0, 0.8, br);
+    fragColor = vec4(c.rgb*a, a);
+  }`;
+  const sunraysShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  #define ITERATIONS 16
+  in vec2 vUv; uniform sampler2D uTexture; uniform float weight; out vec4 fragColor;
+  void main(){
+    float Density = 0.3;
+    float Decay = 0.95;
+    float Exposure = 0.7;
+    vec2 coord = vUv;
+    vec2 dir = (vUv - 0.5) * (Density/float(ITERATIONS));
+    float illuminationDecay = 1.0;
+    float color = texture(uTexture, vUv).a;
+    for(int i=0;i<ITERATIONS;i++){
+      coord -= dir;
+      float col = texture(uTexture, coord).a;
+      color += col*illuminationDecay*weight;
+      illuminationDecay *= Decay;
+    }
+    fragColor = vec4(color*Exposure,0.0,0.0,1.0);
+  }`;
+  const displayShader = `#version 300 es
+  precision highp float; precision highp sampler2D;
+  in vec2 vUv;
+  uniform sampler2D uTexture; uniform sampler2D uBloom; uniform sampler2D uSunrays;
+  uniform float uBloomIntensity; uniform vec3 uBackColor;
+  out vec4 fragColor;
+  vec3 acesFilmic(vec3 x){
+    const float a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
+    return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
+  }
+  void main(){
+    vec3 c = texture(uTexture, vUv).rgb;
+    float density = max(c.r, max(c.g, c.b));
+    float alpha = clamp(density * 1.3, 0.0, 1.0);
+
+    // Radial light-shaft glow — brighter cores stay bright, and streak
+    // outward toward the edges; dim/empty areas fall away, giving the
+    // glowing-ember look from the reference screenshots.
+    float sunrays = texture(uSunrays, vUv).r;
+    sunrays = clamp(sunrays, 0.0, 3.0);
+    vec3 bloom = texture(uBloom, vUv).rgb * sunrays;
+    c *= mix(1.0, sunrays, 0.65); // partial mix so dim dye doesn't vanish entirely
+
+    vec3 combined = c + bloom * uBloomIntensity;
+    combined = acesFilmic(combined * 1.7);          // pushed up from 1.1 -> noticeably more vivid before rolloff
+    combined = pow(combined, vec3(1.0/1.85));       // brighter mid-tones than before (was 1/2.05) for more punch
+    vec3 outColor = mix(uBackColor, combined, alpha);
+    fragColor = vec4(outColor,1.0);
+  }`;
+
+  const clearProgram = new GLProgram(baseVertex, clearShader);
+  const splatProgram = new GLProgram(baseVertex, splatShader);
+  const advectionProgram = new GLProgram(baseVertex, advectionShader);
+  const divergenceProgram = new GLProgram(baseVertex, divergenceShader);
+  const curlProgram = new GLProgram(baseVertex, curlShader);
+  const vorticityProgram = new GLProgram(baseVertex, vorticityShader);
+  const pressureProgram = new GLProgram(baseVertex, pressureShader);
+  const gradientSubtractProgram = new GLProgram(baseVertex, gradientSubtractShader);
+  const brightPassProgram = new GLProgram(baseVertex, brightPassShader);
+  const blurProgram = new GLProgram(baseVertex, blurShader);
+  const sunraysMaskProgram = new GLProgram(baseVertex, sunraysMaskShader);
+  const sunraysProgram = new GLProgram(baseVertex, sunraysShader);
+  const displayProgram = new GLProgram(baseVertex, displayShader);
+  logDebug('All shader programs compiled.');
+
+  const quadVAO = gl.createVertexArray();
+  gl.bindVertexArray(quadVAO);
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, -1,1, 1,1, 1,-1]), gl.STATIC_DRAW);
+  const ebo = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0,1,2,0,2,3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+
+  function blit(target){
+    gl.bindVertexArray(quadVAO);
+    if(target == null){
+      gl.viewport(0,0,gl.drawingBufferWidth, gl.drawingBufferHeight);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    } else {
+      gl.viewport(0,0,target.width, target.height);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    }
+    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+  }
+
+  function createFBO(w,h){
+    gl.activeTexture(gl.TEXTURE0);
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filterMode);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filterMode);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, internalFormatRGBA, w, h, 0, gl.RGBA, texType, null);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if(status !== gl.FRAMEBUFFER_COMPLETE){
+      logDebug('Framebuffer incomplete (status ' + status.toString(16) + ') at ' + w + 'x' + h, true);
+    }
+    gl.viewport(0,0,w,h);
+    gl.clearColor(0,0,0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    return {
+      texture, fbo, width:w, height:h, texelSizeX:1/w, texelSizeY:1/h,
+      attach(id){ gl.activeTexture(gl.TEXTURE0+id); gl.bindTexture(gl.TEXTURE_2D, texture); return id; }
+    };
+  }
+  function createDoubleFBO(w,h){
+    let fbo1 = createFBO(w,h), fbo2 = createFBO(w,h);
+    return {
+      width:w, height:h, texelSizeX:fbo1.texelSizeX, texelSizeY:fbo1.texelSizeY,
+      get read(){return fbo1;}, set read(v){fbo1=v;},
+      get write(){return fbo2;}, set write(v){fbo2=v;},
+      swap(){ const t=fbo1; fbo1=fbo2; fbo2=t; }
+    };
+  }
+  function getResolution(resolution){
+    let ar = gl.drawingBufferWidth / gl.drawingBufferHeight;
+    if(ar < 1) ar = 1/ar;
+    const min = Math.round(resolution);
+    const max = Math.round(resolution*ar);
+    if(gl.drawingBufferWidth > gl.drawingBufferHeight) return {width:max, height:min};
+    return {width:min, height:max};
+  }
+
+  let dye, velocity, divergence, curl, pressure, bloomFBO, sunraysFBO, sunraysTemp;
+
+  function resizeCanvas(){
+    const w = Math.floor(window.innerWidth * Math.min(window.devicePixelRatio||1, 3));
+    const h = Math.floor(window.innerHeight * Math.min(window.devicePixelRatio||1, 3));
+    canvas.width = w; canvas.height = h;
+    canvas.style.width = window.innerWidth+'px';
+    canvas.style.height = window.innerHeight+'px';
+    initFramebuffers();
+  }
+  function initFramebuffers(){
+    const simRes = getResolution(config.SIM_RESOLUTION);
+    const dyeRes = getResolution(config.DYE_RESOLUTION);
+    const bloomRes = getResolution(config.BLOOM_RESOLUTION);
+    const sunraysRes = getResolution(config.SUNRAYS_RESOLUTION);
+    dye = createDoubleFBO(dyeRes.width, dyeRes.height);
+    velocity = createDoubleFBO(simRes.width, simRes.height);
+    divergence = createFBO(simRes.width, simRes.height);
+    curl = createFBO(simRes.width, simRes.height);
+    pressure = createDoubleFBO(simRes.width, simRes.height);
+    bloomFBO = createDoubleFBO(bloomRes.width, bloomRes.height);
+    sunraysFBO = createFBO(sunraysRes.width, sunraysRes.height);
+    sunraysTemp = createFBO(sunraysRes.width, sunraysRes.height);
+    logDebug(`Framebuffers built — sim ${simRes.width}x${simRes.height}, dye ${dyeRes.width}x${dyeRes.height}, bloom ${bloomRes.width}x${bloomRes.height}, sunrays ${sunraysRes.width}x${sunraysRes.height}`);
+  }
+  function applyQuality(level){
+    level = Math.max(0, Math.min(qualityPresets.length-1, level));
+    if(level === qualityLevel) return;
+    const wasLower = level > qualityLevel;
+    qualityLevel = level;
+    const q = qualityPresets[level];
+    config.SIM_RESOLUTION = q.SIM;
+    config.DYE_RESOLUTION = q.DYE;
+    config.BLOOM_RESOLUTION = q.BLOOM;
+    initFramebuffers();
+    logDebug(`Adaptive quality → ${q.label} (` + (wasLower ? 'frame rate recovered' : 'frame rate was struggling') + ')', !wasLower);
+  }
+  function correctRadius(radius){
+    const ar = canvas.width/canvas.height;
+    if(ar > 1) radius *= ar;
+    return radius;
+  }
+
+  // ------------------------------------------------------------------
+  // SPLAT PRIMITIVES (physics layer — no symmetry knowledge here)
+  // ------------------------------------------------------------------
+  function applySplat(targetDoubleFBO, x, y, color, radius){
+    splatProgram.bind();
+    gl.uniform1i(splatProgram.uniforms.uTarget, targetDoubleFBO.read.attach(0));
+    gl.uniform1f(splatProgram.uniforms.aspectRatio, canvas.width/canvas.height);
+    gl.uniform2f(splatProgram.uniforms.point, x, y);
+    gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
+    gl.uniform1f(splatProgram.uniforms.radius, correctRadius(radius));
+    blit(targetDoubleFBO.write);
+    targetDoubleFBO.swap();
+    stats.splatCount++;
+  }
+  function splatVelocity(x,y,dx,dy,radius){ applySplat(velocity, x, y, {r:dx, g:dy, b:0}, radius); }
+  function splatColor(x,y,color,radius){ applySplat(dye, x, y, color, radius); }
+
+  // ------------------------------------------------------------------
+  // SYMMETRY LAYER — purely geometric, sits on top of the splat
+  // primitives. Given one logical splat, returns the full set of
+  // mirrored/rotated copies to actually apply. This is what turns
+  // "random point" into "orderly mandala pattern".
+  //
+  //   none     — just the original point.
+  //   mirror2  — reflect across the vertical centre line.
+  //   mirror4  — reflect across both centre lines (4 quadrants match).
+  //   kaleidoN — true rotational symmetry around the screen centre,
+  //     aspect-corrected so the pattern looks circular even on a
+  //     16:9 screen rather than stretched into an ellipse.
+  //   mandalaN — rotational symmetry AND a mirror reflection combined
+  //     (a proper dihedral kaleidoscope, like the toy) — twice as many
+  //     copies as kaleidoN for the same N, and mirror-symmetric rather
+  //     than just spun, so it reads as a much more intricate mandala.
+  // ------------------------------------------------------------------
+  function symmetryPoints(x, y, dx, dy){
+    const mode = symmetrySel.value;
+    if(mode === 'none') return [{x,y,dx,dy}];
+
+    const cx = 0.5, cy = 0.5;
+    const aspect = canvas.width / canvas.height;
+
+    if(mode === 'mirror2'){
+      return [ {x,y,dx,dy}, {x:1-x, y, dx:-dx, dy} ];
+    }
+    if(mode === 'mirror4'){
+      return [
+        {x,y,dx,dy},
+        {x:1-x, y:y,   dx:-dx, dy:dy},
+        {x:x,   y:1-y, dx:dx,  dy:-dy},
+        {x:1-x, y:1-y, dx:-dx, dy:-dy}
+      ];
+    }
+
+    // Rotational kaleidoscope: work in aspect-corrected space so the
+    // rotation is a true circle rather than an aspect-skewed ellipse.
+    const relX = (x - cx) * aspect, relY = (y - cy);
+    const r = Math.hypot(relX, relY);
+    const velMag = Math.hypot(dx, dy);
+
+    function ring(baseAngle, velAngle, n, out){
+      for(let i=0;i<n;i++){
+        const a  = baseAngle + (2*Math.PI/n)*i;
+        const va = velAngle  + (2*Math.PI/n)*i;
+        out.push({
+          x: cx + (r*Math.cos(a))/aspect,
+          y: cy + r*Math.sin(a),
+          dx: velMag*Math.cos(va),
+          dy: velMag*Math.sin(va)
+        });
+      }
+      return out;
+    }
+
+    const baseAngle = Math.atan2(relY, relX);
+    const velAngle = Math.atan2(dy, dx);
+
+    const kMatch = mode.match(/^kaleido(\d+)$/);
+    if(kMatch){
+      return ring(baseAngle, velAngle, parseInt(kMatch[1], 10), []);
+    }
+
+    const mMatch = mode.match(/^mandala(\d+)$/);
+    if(mMatch){
+      const n = parseInt(mMatch[1], 10);
+      const points = [];
+      // Original ring, plus a copy mirrored across the horizontal axis
+      // (in aspect-corrected space) — the combination of a rotation and
+      // a reflection is exactly what makes a real kaleidoscope's mirrors
+      // produce a symmetric mandala rather than just a spinning pattern.
+      ring(baseAngle, velAngle, n, points);
+      ring(-baseAngle, -velAngle, n, points);
+      return points;
+    }
+
+    // Unknown value fallback — behave like no symmetry rather than erroring.
+    return [{x,y,dx,dy}];
+  }
+
+  // High-level splat wrappers that apply the symmetry layer automatically.
+  // These are what the rest of the code (manual painting, auto-pilot,
+  // shape drawing) should call.
+  function symSplatVelocity(x,y,dx,dy,radius){
+    symmetryPoints(x,y,dx,dy).forEach(p => splatVelocity(p.x,p.y,p.dx,p.dy,radius));
+  }
+  function symSplatColor(x,y,color,radius){
+    symmetryPoints(x,y,0,0).forEach(p => splatColor(p.x,p.y,color,radius));
+  }
+  function symSplat(x,y,dx,dy,color,radius){
+    symmetryPoints(x,y,dx,dy).forEach(p => {
+      splatVelocity(p.x,p.y,p.dx,p.dy,radius);
+      splatColor(p.x,p.y,color,radius);
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // ONE SIMULATION STEP
+  // ------------------------------------------------------------------
+  function step(dt){
+    gl.disable(gl.BLEND);
+
+    curlProgram.bind();
+    gl.uniform2f(curlProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+    gl.uniform1i(curlProgram.uniforms.uVelocity, velocity.read.attach(0));
+    blit(curl);
+
+    vorticityProgram.bind();
+    gl.uniform2f(vorticityProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+    gl.uniform1i(vorticityProgram.uniforms.uVelocity, velocity.read.attach(0));
+    gl.uniform1i(vorticityProgram.uniforms.uCurl, curl.attach(1));
+    gl.uniform1f(vorticityProgram.uniforms.curlStrength, config.CURL);
+    gl.uniform1f(vorticityProgram.uniforms.dt, dt);
+    blit(velocity.write); velocity.swap();
+
+    divergenceProgram.bind();
+    gl.uniform2f(divergenceProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+    gl.uniform1i(divergenceProgram.uniforms.uVelocity, velocity.read.attach(0));
+    blit(divergence);
+
+    clearProgram.bind();
+    gl.uniform1i(clearProgram.uniforms.uTexture, pressure.read.attach(0));
+    gl.uniform1f(clearProgram.uniforms.value, config.PRESSURE);
+    blit(pressure.write); pressure.swap();
+
+    pressureProgram.bind();
+    gl.uniform2f(pressureProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+    gl.uniform1i(pressureProgram.uniforms.uDivergence, divergence.attach(0));
+    for(let i=0;i<config.PRESSURE_ITERATIONS;i++){
+      gl.uniform1i(pressureProgram.uniforms.uPressure, pressure.read.attach(1));
+      blit(pressure.write); pressure.swap();
+    }
+
+    gradientSubtractProgram.bind();
+    gl.uniform2f(gradientSubtractProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+    gl.uniform1i(gradientSubtractProgram.uniforms.uPressure, pressure.read.attach(0));
+    gl.uniform1i(gradientSubtractProgram.uniforms.uVelocity, velocity.read.attach(1));
+    blit(velocity.write); velocity.swap();
+
+    advectionProgram.bind();
+    gl.uniform2f(advectionProgram.uniforms.texelSize, velocity.texelSizeX, velocity.texelSizeY);
+    gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
+    gl.uniform1i(advectionProgram.uniforms.uSource, velocity.read.attach(0));
+    gl.uniform1f(advectionProgram.uniforms.dt, dt);
+    gl.uniform1f(advectionProgram.uniforms.dissipation, config.VELOCITY_DISSIPATION);
+    blit(velocity.write); velocity.swap();
+
+    gl.uniform2f(advectionProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
+    gl.uniform1i(advectionProgram.uniforms.uVelocity, velocity.read.attach(0));
+    gl.uniform1i(advectionProgram.uniforms.uSource, dye.read.attach(1));
+    gl.uniform1f(advectionProgram.uniforms.dissipation, config.DENSITY_DISSIPATION);
+    blit(dye.write); dye.swap();
+  }
+
+  function applyBloom(source, dest){
+    gl.disable(gl.BLEND);
+    let last = dest;
+    brightPassProgram.bind();
+    gl.uniform1f(brightPassProgram.uniforms.threshold, config.BLOOM_THRESHOLD);
+    gl.uniform1i(brightPassProgram.uniforms.uTexture, source.attach(0));
+    blit(last.write); last.swap();
+
+    blurProgram.bind();
+    for(let i=0;i<config.BLOOM_ITERATIONS;i++){
+      gl.uniform2f(blurProgram.uniforms.direction, last.texelSizeX, 0.0);
+      gl.uniform1i(blurProgram.uniforms.uTexture, last.read.attach(0));
+      blit(last.write); last.swap();
+      gl.uniform2f(blurProgram.uniforms.direction, 0.0, last.texelSizeY);
+      gl.uniform1i(blurProgram.uniforms.uTexture, last.read.attach(0));
+      blit(last.write); last.swap();
+    }
+  }
+
+  // Radial light-shaft pass, ported from PavelDoGreat/WebGL-Fluid-Simulation:
+  // mask out anything below a brightness threshold, then radially "smear"
+  // whatever's left away from screen centre so bright cores read as
+  // glowing embers throwing off streaks of light — this is what gives the
+  // reference screenshots their signature glow instead of just flat dye.
+  function applySunrays(source, mask, dest){
+    gl.disable(gl.BLEND);
+    sunraysMaskProgram.bind();
+    gl.uniform1i(sunraysMaskProgram.uniforms.uTexture, source.attach(0));
+    blit(mask);
+
+    sunraysProgram.bind();
+    gl.uniform1f(sunraysProgram.uniforms.weight, config.SUNRAYS_WEIGHT);
+    gl.uniform1i(sunraysProgram.uniforms.uTexture, mask.attach(0));
+    blit(dest);
+  }
+
+  function render(){
+    applyBloom(dye.read, bloomFBO);
+    applySunrays(dye.read, sunraysTemp, sunraysFBO);
+    displayProgram.bind();
+    gl.uniform2f(displayProgram.uniforms.texelSize, dye.texelSizeX, dye.texelSizeY);
+    gl.uniform1i(displayProgram.uniforms.uTexture, dye.read.attach(0));
+    gl.uniform1i(displayProgram.uniforms.uBloom, bloomFBO.read.attach(1));
+    gl.uniform1i(displayProgram.uniforms.uSunrays, sunraysFBO.attach(2));
+    gl.uniform1f(displayProgram.uniforms.uBloomIntensity, config.BLOOM_INTENSITY);
+    gl.uniform3f(displayProgram.uniforms.uBackColor, config.BACK_COLOR[0], config.BACK_COLOR[1], config.BACK_COLOR[2]);
+    blit(null);
+  }
+
+  function clearAll(){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dye.read.fbo); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dye.write.fbo); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, velocity.read.fbo); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, velocity.write.fbo); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    shapeQueue.length = 0;
+    logDebug('Canvas cleared.');
+  }
+
+  // ------------------------------------------------------------------
+  // Colour helpers. Intensity roughly doubled versus the previous
+  // version — the ACES tonemap above now has enough headroom to take
+  // that without flat-clipping, so it reads as vivid instead of dull.
+  // ------------------------------------------------------------------
+  function HSVtoRGB(h,s,v){
+    let r,g,b,i,f,p,q,t;
+    i = Math.floor(h*6); f = h*6-i; p = v*(1-s); q = v*(1-f*s); t = v*(1-(1-f)*s);
+    switch(i%6){
+      case 0: r=v;g=t;b=p;break; case 1: r=q;g=v;b=p;break; case 2: r=p;g=v;b=t;break;
+      case 3: r=p;g=q;b=v;break; case 4: r=t;g=p;b=v;break; case 5: r=v;g=p;b=q;break;
+    }
+    return {r,g,b};
+  }
+  function paletteColor(hue01){
+    let h = hue01 % 1.0, s = 1.0, v = 1.0;
+    switch(paletteSel.value){
+      case 'neon': s=1.0; v=1.0; break;
+      case 'pastel': s=0.5; v=1.0; break;
+      case 'fire': h = (h*0.14); s=1.0; v=1.0; break;
+      case 'ocean': h = 0.5 + (h*0.22); s=0.95; v=1.0; break;
+      // Blue-through-orange sweep, high saturation — the marbled
+      // blue/black/orange chrome look from the reference screenshots.
+      case 'thermal': h = (h<0.5) ? mapRange(h,0,0.5,0.58,0.03) : mapRange(h,0.5,1,0.03,0.58); s=0.92; v=1.0; break;
+      // Green through cyan into violet.
+      case 'aurora': h = mapRange(h,0,1,0.30,0.83); s=0.85; v=1.0; break;
+      // Red through pink into orange — a warm monochrome-ish band.
+      case 'crimson': h = (0.95 + h*0.14) % 1.0; s=0.9; v=1.0; break;
+      default: break;
+    }
+    const c = HSVtoRGB(h,s,v);
+    const INTENSITY = 0.34;
+    return {r:c.r*INTENSITY, g:c.g*INTENSITY, b:c.b*INTENSITY};
+  }
+
+  // ------------------------------------------------------------------
+  // MANUAL MODE — click-and-drag painting, now symmetry-aware.
+  // ------------------------------------------------------------------
+  let mode = 'manual';
+  let pointer = { down:false, x:0, y:0, prevX:0, prevY:0, hue:Math.random() };
+
+  function coordsFromEvent(e){
+    const r = canvas.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x:(cx-r.left)/r.width, y:1.0-(cy-r.top)/r.height };
+  }
+  function onDown(e){
+    if(mode!=='manual') return;
+    const p = coordsFromEvent(e);
+    pointer.down=true;
+    pointer.x=pointer.prevX=p.x; pointer.y=pointer.prevY=p.y;
+    pointer.hue = Math.random();
+    symSplat(p.x, p.y, 0, 0, paletteColor(pointer.hue), config.SPLAT_RADIUS);
+  }
+  function onMove(e){
+    if(mode!=='manual' || !pointer.down) return;
+    const p = coordsFromEvent(e);
+    pointer.prevX = pointer.x; pointer.prevY = pointer.y;
+    pointer.x = p.x; pointer.y = p.y;
+    pointer.hue = (pointer.hue + 0.0025) % 1.0;
+    const dx = (pointer.x - pointer.prevX) * config.SPLAT_FORCE;
+    const dy = (pointer.y - pointer.prevY) * config.SPLAT_FORCE;
+    symSplat(pointer.x, pointer.y, dx, dy, paletteColor(pointer.hue), config.SPLAT_RADIUS);
+  }
+  function onUp(){ pointer.down=false; }
+
+  canvas.addEventListener('mousedown', onDown);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  canvas.addEventListener('touchstart', e=>{onDown(e); e.preventDefault();}, {passive:false});
+  canvas.addEventListener('touchmove', e=>{onMove(e); e.preventDefault();}, {passive:false});
+  window.addEventListener('touchend', onUp);
+
+  // ------------------------------------------------------------------
+  // AUTO MODE, part 1: ambient flow.
+  // A handful of virtual pointers continuously push the velocity field
+  // (no colour) so there's always an underlying current for shapes and
+  // vorticity to work with — otherwise generated patterns would just
+  // sit still instead of drifting and curling.
+  // ------------------------------------------------------------------
+  const autoPointers = [];
+  function initAutoPointers(){
+    autoPointers.length = 0;
+    const n = 3;
+    for(let i=0;i<n;i++){
+      autoPointers.push({
+        freqX: 0.25 + Math.random()*0.5,
+        freqY: 0.25 + Math.random()*0.5,
+        phaseX: Math.random()*Math.PI*2,
+        phaseY: Math.random()*Math.PI*2,
+        rScale: 0.16 + Math.random()*0.14,
+        lastX:null, lastY:null
+      });
+    }
+    logDebug(`Auto-pilot ambient flow ready with ${n} pointers.`);
+  }
+  initAutoPointers();
+
+  // ------------------------------------------------------------------
+  // AUTO MODE, part 2: generated shapes.
+  // Periodically builds a whole parametric shape as a queue of points,
+  // then draws it progressively (a few points per frame) so it reads as
+  // smooth, deliberate motion rather than an instant stamp. Every point
+  // goes through the symmetry layer, which is what produces the
+  // mandala/kaleidoscope compositions filling the screen in an orderly
+  // way, similar to 4K OLED colour-test reels.
+  // ------------------------------------------------------------------
+  let shapeQueue = [];
+  let nextShapeIn = 0.4;
+
+  function generateShapePoints(){
+    const shapeTypes = ['line','circle','arc','spiral','burst'];
+    const type = shapeTypes[Math.floor(Math.random()*shapeTypes.length)];
+    const N = 16 + Math.floor(Math.random()*10);
+    // Keep shapes reasonably close to centre — with symmetry active,
+    // centre-anchored shapes tile outward evenly instead of clipping
+    // off one side of the screen unevenly.
+    const cx = 0.5 + (Math.random()-0.5)*0.3;
+    const cy = 0.5 + (Math.random()-0.5)*0.3;
+    const baseHue = Math.random();
+    const pts = [];
+
+    if(type === 'line'){
+      const ang = Math.random()*Math.PI*2;
+      const len = 0.16 + Math.random()*0.22;
+      const x0 = cx - Math.cos(ang)*len/2, y0 = cy - Math.sin(ang)*len/2;
+      const x1 = cx + Math.cos(ang)*len/2, y1 = cy + Math.sin(ang)*len/2;
+      for(let i=0;i<N;i++){
+        const t = i/(N-1);
+        pts.push({ x:x0+(x1-x0)*t, y:y0+(y1-y0)*t, dx:Math.cos(ang), dy:Math.sin(ang), hue:(baseHue+t*0.25)%1 });
+      }
+    } else if(type === 'circle' || type === 'arc'){
+      const radius = 0.07 + Math.random()*0.13;
+      const startA = Math.random()*Math.PI*2;
+      const sweep = (type==='circle') ? Math.PI*2 : (Math.PI*0.5 + Math.random()*Math.PI);
+      for(let i=0;i<N;i++){
+        const t = i/(N-1);
+        const a = startA + sweep*t;
+        const tangent = a + Math.PI/2;
+        pts.push({ x:cx+Math.cos(a)*radius, y:cy+Math.sin(a)*radius, dx:Math.cos(tangent), dy:Math.sin(tangent), hue:(baseHue+t*0.4)%1 });
+      }
+    } else if(type === 'spiral'){
+      const turns = 1.3 + Math.random()*1.3;
+      const maxR = 0.05 + Math.random()*0.15;
+      for(let i=0;i<N;i++){
+        const t = i/(N-1);
+        const a = t*Math.PI*2*turns;
+        const r = maxR*t;
+        const tangent = a + Math.PI/2;
+        pts.push({ x:cx+Math.cos(a)*r, y:cy+Math.sin(a)*r, dx:Math.cos(tangent)*(0.5+t), dy:Math.sin(tangent)*(0.5+t), hue:(baseHue+t*0.5)%1 });
+      }
+    } else { // 'burst' — short radial rays outward from one point
+      for(let i=0;i<N;i++){
+        const t = i/(N-1);
+        const a = t*Math.PI*2;
+        pts.push({ x:cx+Math.cos(a)*0.02, y:cy+Math.sin(a)*0.02, dx:Math.cos(a), dy:Math.sin(a), hue:(baseHue+t)%1 });
+      }
+    }
+    stats.shapeCount++;
+    return pts;
+  }
+
+  let autoT = 0;
+  function stepAuto(dtSec){
+    const speedMul = parseFloat(autoSpeed.value)/10;
+    autoT += dtSec*speedMul;
+
+    // --- ambient flow (velocity only, every frame) ---
+    autoPointers.forEach(p=>{
+      const x = 0.5 + Math.sin(autoT*p.freqX + p.phaseX) * p.rScale;
+      const y = 0.5 + Math.cos(autoT*p.freqY + p.phaseY) * p.rScale;
+      if(p.lastX !== null){
+        const dx = (x-p.lastX) * config.SPLAT_FORCE * 0.9;
+        const dy = (y-p.lastY) * config.SPLAT_FORCE * 0.9;
+        symSplatVelocity(x, y, dx, dy, config.SPLAT_RADIUS * 2.0);
+      }
+      p.lastX = x; p.lastY = y;
+    });
+
+    // --- shape scheduling & progressive drawing ---
+    nextShapeIn -= dtSec*speedMul;
+    if(nextShapeIn <= 0 && shapeQueue.length === 0){
+      shapeQueue = generateShapePoints();
+      nextShapeIn = 1.1 + Math.random()*1.1;
+    }
+    const pointsPerFrame = Math.max(1, Math.round(1 + speedMul));
+    for(let k=0; k<pointsPerFrame && shapeQueue.length; k++){
+      const pt = shapeQueue.shift();
+      const color = paletteColor(pt.hue);
+      const dx = pt.dx * 2600, dy = pt.dy * 2600;
+      symSplat(pt.x, pt.y, dx, dy, color, config.SPLAT_RADIUS * 0.55);
+    }
+  }
+
+  function setMode(m){
+    mode = m;
+    manualBtn.classList.toggle('active', m==='manual');
+    autoBtn.classList.toggle('active', m==='auto');
+    manualBtn.setAttribute('aria-pressed', m==='manual');
+    autoBtn.setAttribute('aria-pressed', m==='auto');
+    if(m==='auto') autoPointers.forEach(p=>{p.lastX=null;p.lastY=null;});
+    logDebug('Mode → ' + m);
+  }
+  manualBtn.addEventListener('click', ()=>setMode('manual'));
+  autoBtn.addEventListener('click', ()=>setMode('auto'));
+
+  // ------------------------------------------------------------------
+  // UI slider wiring — every slider has a matching number input so
+  // exact values can be typed in directly instead of only dragging.
+  // bindSliderNumber() keeps the pair in sync in both directions; for
+  // Auto Speed the slider stores 10x the displayed multiplier (so the
+  // slider itself can use whole-number steps), so a toDisplay/toInternal
+  // pair of conversion functions handles that mapping transparently.
+  // ------------------------------------------------------------------
+  function mapRange(v,a,b,c,d){ return c + (d-c)*((v-a)/(b-a)); }
+
+  // NOTE: syncConfigFromUI is a function *declaration* further down, so it's
+  // hoisted and safe to reference here even though it's defined later.
+  function bindSliderNumber(slider, numberInput, toDisplay, toInternal, decimals){
+    toDisplay = toDisplay || (v=>v);
+    toInternal = toInternal || (v=>v);
+    decimals = decimals || 0;
+    const numMin = parseFloat(numberInput.min), numMax = parseFloat(numberInput.max);
+    const fmt = v => decimals > 0 ? Number(v.toFixed(decimals)) : Math.round(v);
+
+    // Slider moved (drag) -> reflect the display value in the number box.
+    slider.addEventListener('input', ()=>{
+      numberInput.value = fmt(toDisplay(parseFloat(slider.value)));
+      syncConfigFromUI();
+    });
+
+    // Number typed -> push the converted value into the slider and apply it
+    // immediately. Bug fix: this used to dispatch a synthetic 'input' event
+    // back onto the slider, which looped into the slider's own listener and
+    // overwrote numberInput.value on every single keystroke — so typing
+    // "22" would get clobbered back down to "4" (the clamped min) the
+    // instant you typed the first digit. Now the two directions are fully
+    // decoupled: typing only touches the slider + config directly, and the
+    // number box is only ever rewritten when a value actually had to be
+    // clamped into range (or once, on commit).
+    function applyTyped(isLive){
+      let v = parseFloat(numberInput.value);
+      if(isNaN(v)){
+        if(isLive) return; // mid-typing (e.g. just "-" or "."): leave it alone
+        v = toDisplay(parseFloat(slider.value));
+      }
+      const clamped = Math.max(numMin, Math.min(numMax, v));
+      slider.value = toInternal(clamped);
+      syncConfigFromUI();
+      if(!isLive || clamped !== v) numberInput.value = fmt(clamped);
+    }
+    numberInput.addEventListener('input', ()=>applyTyped(true));
+    numberInput.addEventListener('change', ()=>applyTyped(false));
+
+    // Initial sync so the number box matches the slider's starting value.
+    numberInput.value = fmt(toDisplay(parseFloat(slider.value)));
+  }
+
+  bindSliderNumber(brushSize, brushSizeNum);
+  bindSliderNumber(trailFade, trailFadeNum);
+  bindSliderNumber(curlAmt, curlAmtNum);
+  bindSliderNumber(autoSpeed, autoSpeedNum, v => (v/10), v => Math.round(v*10), 1);
+
+  function syncConfigFromUI(){
+    // Brush Size (1-15) -> actual splat radius. Old formula was value/2500,
+    // which — combined with the aspect-ratio correction applied on top of
+    // it for wide screens — made the slider's upper half produce enormous,
+    // screen-filling blobs. Shrunk further per feedback that even the
+    // small range still felt too big — top of the slider now produces a
+    // modest, controlled dab rather than a wide splash.
+    config.SPLAT_RADIUS = mapRange(parseFloat(brushSize.value), 1, 15, 0.0006, 0.005);
+    config.DENSITY_DISSIPATION = mapRange(parseFloat(trailFade.value), 1, 100, 4.0, 0.15);
+    config.CURL = parseFloat(curlAmt.value);
+  }
+  symmetrySel.addEventListener('change', ()=> logDebug('Symmetry → ' + symmetrySel.value));
+  backgroundSel.addEventListener('change', ()=>{
+    config.BACK_COLOR = BACKGROUNDS[backgroundSel.value] || BACKGROUNDS.black;
+    logDebug('Background → ' + backgroundSel.value);
+  });
+  syncConfigFromUI();
+
+  clearBtn.addEventListener('click', clearAll);
+
+  let uiHidden = false;
+  function setUiHidden(state){
+    uiHidden = state;
+    ui.classList.toggle('hidden', uiHidden);
+    toggleUiTab.classList.toggle('show', uiHidden);
+  }
+  hideBtn.addEventListener('click', ()=>setUiHidden(true));
+  toggleUiTab.addEventListener('click', ()=>setUiHidden(false));
+
+  // ------------------------------------------------------------------
+  // "Surprise me" — jumps to a fresh random palette/symmetry combo and
+  // hands control to auto-pilot, so there's always a quick, playful way
+  // to see a completely different look without hand-tuning every slider.
+  // ------------------------------------------------------------------
+  const PALETTES = ['neon','pastel','fire','ocean','thermal','aurora','crimson'];
+  const SYMMETRIES = ['mirror2','mirror4','kaleido3','kaleido6','kaleido8','kaleido12','mandala6','mandala10'];
+  const BACKGROUND_KEYS = Object.keys(BACKGROUNDS);
+  function randomize(){
+    const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+    paletteSel.value = pick(PALETTES);
+    symmetrySel.value = pick(SYMMETRIES);
+    symmetrySel.dispatchEvent(new Event('change'));
+
+    backgroundSel.value = pick(BACKGROUND_KEYS);
+    backgroundSel.dispatchEvent(new Event('change'));
+
+    // Nudge a couple of feel-affecting sliders too, so each surprise is
+    // actually distinct rather than just a palette/symmetry re-skin of
+    // the same motion.
+    curlAmt.value = Math.round(12 + Math.random()*40);
+    curlAmt.dispatchEvent(new Event('input'));
+    autoSpeed.value = Math.round(4 + Math.random()*16);
+    autoSpeed.dispatchEvent(new Event('input'));
+
+    setMode('auto');
+    clearAll();
+    // A small scattered cluster of bursts instead of one dead-centre
+    // splat, so the new pattern shows some immediate life rather than
+    // starting from a single flat blob.
+    // BUG FIX: radius was 0.28 here too — same order-of-magnitude mismatch
+    // as the launch flourish above, producing three overlapping
+    // screen-filling flashes instead of a scattered cluster.
+    for(let i=0;i<3;i++){
+      const hue = Math.random();
+      const bx = 0.5 + (Math.random()-0.5)*0.3;
+      const by = 0.5 + (Math.random()-0.5)*0.3;
+      symSplat(bx, by, (Math.random()-0.5)*1400, (Math.random()-0.5)*1400, paletteColor(hue), 0.02);
+    }
+    logDebug(`Surprise! → ${paletteSel.value} / ${symmetrySel.value} / ${backgroundSel.value}`);
+  }
+  randomBtn.addEventListener('click', randomize);
+
+  // ------------------------------------------------------------------
+  // Snapshot — the WebGL context is created with preserveDrawingBuffer
+  // false (for performance), so the drawing buffer can't be read at an
+  // arbitrary moment like a button click; it may already be cleared for
+  // compositing. Instead we set a flag and grab the frame from inside
+  // the render loop, immediately after render() has just drawn it.
+  // ------------------------------------------------------------------
+  let snapshotRequested = false;
+  function requestSnapshot(){ snapshotRequested = true; }
+  function takeSnapshot(){
+    canvas.toBlob(blob=>{
+      if(!blob){ logDebug('Snapshot failed — could not read canvas.', true); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `chroma-flow-${Date.now()}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      logDebug('Snapshot saved.');
+    }, 'image/png');
+    snapFlash.classList.add('go');
+    setTimeout(()=>snapFlash.classList.remove('go'), 550);
+  }
+  snapBtn.addEventListener('click', requestSnapshot);
+
+  // ------------------------------------------------------------------
+  // First-time hint — a soft, non-blocking nudge that fades in shortly
+  // after start and disappears the moment the person actually interacts.
+  // ------------------------------------------------------------------
+  let hintDismissed = false;
+  function dismissHint(){
+    if(hintDismissed) return;
+    hintDismissed = true;
+    firstHint.classList.remove('show');
+  }
+  canvas.addEventListener('mousedown', dismissHint);
+  canvas.addEventListener('touchstart', dismissHint);
+  window.addEventListener('keydown', dismissHint, {once:true});
+
+  // ------------------------------------------------------------------
+  // Screen test overlays (unrelated to the fluid sim)
+  // ------------------------------------------------------------------
+  const tests = {
+    '1': {label:'WHITE — brightness / dead pixel test', css:'#ffffff'},
+    '2': {label:'BLACK — dead pixel / backlight bleed test', css:'#000000'},
+    '3': {label:'RED', css:'#ff0000'},
+    '4': {label:'GREEN', css:'#00ff00'},
+    '5': {label:'BLUE', css:'#0000ff'},
+    '6': {label:'50% GRAY — uniformity test', css:'#808080'},
+    '7': {label:'RGB STRIPES — subpixel test', css:'repeating-linear-gradient(90deg,#ff0000 0 4px,#00ff00 4px 8px,#0000ff 8px 12px)'},
+    '8': {label:'GRADIENT — banding test', css:'linear-gradient(90deg,#000,#fff)'},
+    '9': {label:'SPECTRUM — full hue sweep', css:'linear-gradient(90deg,red,yellow,lime,cyan,blue,magenta,red)'}
+  };
+  function showTest(key){
+    const t = tests[key]; if(!t) return;
+    testOverlay.style.background = t.css;
+    testOverlay.style.display='block';
+    testLabel.textContent = t.label; testLabel.style.display='block';
+  }
+  function hideTest(){ testOverlay.style.display='none'; testLabel.style.display='none'; }
+
+  // ------------------------------------------------------------------
+  // Debug HUD
+  // ------------------------------------------------------------------
+  let debugVisible = false;
+  function refreshDebugHud(fps, dt){
+    if(!debugVisible) return;
+    const q = qualityPresets[qualityLevel];
+    const logLines = debugLog.slice().reverse()
+      .map(l => `<span class="${l.warn?'hud-warn':''}">${l.text}</span>`)
+      .join('\n');
+    debugHud.innerHTML =
+      `<div class="hud-title">DEBUG — Chroma Flow</div>` +
+      `FPS: ${fps.toFixed(0)}  (frame ${(dt*1000).toFixed(1)} ms)\n` +
+      `Mode: ${mode}   Quality: ${q.label}\n` +
+      `Symmetry: ${symmetrySel.value}\n` +
+      `Sim grid: ${velocity.width}x${velocity.height}\n` +
+      `Dye grid: ${dye.width}x${dye.height}\n` +
+      `Bloom grid: ${bloomFBO.width}x${bloomFBO.height}\n` +
+      `Format: ${formatName}\n` +
+      `GPU: ${rendererInfo}\n` +
+      `Splats: ${stats.splatCount}   Shapes: ${stats.shapeCount}\n` +
+      `Shape queue: ${shapeQueue.length} pts pending\n` +
+      `Frame #: ${stats.frame}\n` +
+      `<div class="hud-log">${logLines}</div>`;
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    if(startOverlay.style.display !== 'none') return;
+
+    // BUG FIX: this listener is on `window`, so it used to fire for every
+    // keystroke everywhere on the page — including while typing in one of
+    // the panel's number boxes or its palette/symmetry <select>. Typing an
+    // exact value like "35" into a slider's number box would hit this
+    // handler on every digit and instantly pop up the matching screen-test
+    // colour (and 'c'/'h'/'d'/'f'/space had the same problem). Shortcuts
+    // now only fire when focus isn't inside a form control.
+    const activeTag = document.activeElement && document.activeElement.tagName;
+    const typingInField = activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA';
+    if(typingInField){
+      if(e.key === 'Escape') document.activeElement.blur();
+      return;
+    }
+
+    const k = e.key.toLowerCase();
+    if(k>='1' && k<='9'){ showTest(k); return; }
+    if(k==='0'){ hideTest(); return; }
+    if(k==='c'){ clearAll(); return; }
+    if(k==='h'){ setUiHidden(!uiHidden); return; }
+    if(k==='r'){ randomize(); return; }
+    if(k==='s'){ requestSnapshot(); return; }
+    if(k==='d'){ debugVisible = !debugVisible; debugHud.classList.toggle('show', debugVisible); logDebug('Debug HUD ' + (debugVisible?'shown':'hidden')); return; }
+    if(k===' '){ setMode(mode==='manual'?'auto':'manual'); e.preventDefault(); return; }
+    if(k==='f'){ toggleFullscreen(); return; }
+  });
+
+  function toggleFullscreen(){
+    if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+    else document.exitFullscreen().catch(()=>{});
+  }
+
+  // ------------------------------------------------------------------
+  // MAIN LOOP
+  // ------------------------------------------------------------------
+  let lastTime = performance.now();
+  let frames=0, fpsTimer=0, currentFps=60;
+  let qualityCheckTimer = 0;
+
+  function loop(now){
+    const dt = Math.min((now-lastTime)/1000, 0.0166) || 0.0166;
+    lastTime = now;
+    stats.frame++;
+
+    if(mode==='auto') stepAuto(dt);
+    step(dt);
+    render();
+
+    // Grab the frame right here, immediately after it's drawn — the canvas
+    // is created with preserveDrawingBuffer:false, so waiting until an
+    // arbitrary later moment (e.g. a click handler) risks reading a buffer
+    // that's already been cleared for compositing.
+    if(snapshotRequested){
+      snapshotRequested = false;
+      takeSnapshot();
+    }
+
+    frames++; fpsTimer += dt;
+    if(fpsTimer > 0.5){
+      currentFps = frames/fpsTimer;
+      frames=0; fpsTimer=0;
+      refreshDebugHud(currentFps, dt);
+    }
+
+    qualityCheckTimer += dt;
+    if(qualityCheckTimer > 2.0){
+      qualityCheckTimer = 0;
+      if(currentFps < 33 && qualityLevel > 0){
+        applyQuality(qualityLevel - 1);
+      } else if(currentFps > 55 && qualityLevel < qualityPresets.length-1){
+        // BUG FIX: quality used to only ever step down and never recover,
+        // so a brief slowdown (tab losing focus, a heavy shape burst, a
+        // moment of thermal throttling) would permanently cap visual
+        // quality for the rest of the session even once frame rate was
+        // comfortably back above target. Step back up once things have
+        // clearly settled.
+        applyQuality(qualityLevel + 1);
+      }
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  startBtn.addEventListener('click', ()=>{
+    document.documentElement.requestFullscreen().catch(()=>{});
+    startOverlay.style.display='none';
+    resizeCanvas();
+    clearAll();
+    // Opening flourish: a small symmetric burst so it's never dead black at launch.
+    // BUG FIX: this used a fixed radius of 0.5, which is roughly 100x
+    // larger than anything the (now much smaller) brush-size range can
+    // produce — it rendered as a giant, screen-filling flash rather than
+    // the "small burst" the comment described.
+    const hue = Math.random();
+    symSplat(0.5, 0.5, 0, 0, paletteColor(hue), 0.035);
+    logDebug('Simulation started.');
+    lastTime = performance.now();
+    requestAnimationFrame(loop);
+    setTimeout(()=>{ if(!hintDismissed) firstHint.classList.add('show'); }, 900);
+    setTimeout(dismissHint, 7000);
+  });
+
+  document.addEventListener('fullscreenchange', resizeCanvas);
+})();
+</script>
+</body>
+</html>
