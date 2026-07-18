@@ -1,4 +1,4 @@
-# 🌊 CHROMA FLOW
+# 🌊 [CHROMA FLOW](https://ranekun.github.io/Chroma-Flow/)
 
 ![WebGL2](https://img.shields.io/badge/WebGL-2.0-990000.svg)
 ![JavaScript](https://img.shields.io/badge/javascript-ES6+-yellow.svg)
@@ -7,6 +7,8 @@
 ![Status](https://img.shields.io/badge/status-live-brightgreen.svg)
 
 > *"A real GPU fluid simulation — velocity fields, swirling vorticity, dye that actually flows and mixes like smoke or ink in water."*
+
+> Highly inspired from- [PavelDoGreat - WebGL-Fluid-Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation)
 
 ---
 
@@ -169,5 +171,3 @@ Every splat passes through a symmetry transform before being applied:
 
 ### 🙏 Credits
 Made with ♥ by Rane Kun
-
-Highly inspired from- [PavelDoGreat - WebGL-Fluid-Simulation](https://github.com/PavelDoGreat/WebGL-Fluid-Simulation)
